@@ -4,11 +4,12 @@
   {registered, []},
   {applications,
    [kernel,
-    stdlib
+    stdlib,
+    partisan
    ]},
   {env,[]},
   {modules, []},
-  {maintainers, []},
+  {maintainers, ["Christopher Meiklejohn"]},
   {licenses, []},
   {links, []}
  ]}.

@@ -59,7 +59,7 @@
          terminate/2,
          code_change/3]).
 
--include("partisan.hrl").
+-include_lib("partisan/include/partisan.hrl").
 
 -include_lib("amqp_client/include/amqp_client.hrl").
 
