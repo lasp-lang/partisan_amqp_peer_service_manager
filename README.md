@@ -1,9 +1,2 @@
-partisan_amqp_peer_service_manager
+AMQP backend for Partisan.
 =====
-
-An OTP library
-
-Build
------
-
-    $ rebar3 compile
