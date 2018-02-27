@@ -42,6 +42,8 @@
          send_message/2,
          cast_message/3,
          forward_message/3,
+         cast_message/5,
+         forward_message/5,
          cast_message/4,
          forward_message/4,
          receive_message/1,
@@ -113,6 +115,10 @@ cast_message(Name, ServerRef, Message) ->
 
 %% @doc Cast a message to a remote gen_server.
 cast_message(Name, Channel, ServerRef, Message) ->
+    cast_message(Name, Channel, ServerRef, Message, []).
+
+%% @doc Cast a message to a remote gen_server.
+cast_message(Name, Channel, ServerRef, Message, _Options) ->
     FullMessage = {'$gen_cast', Message},
     forward_message(Name, Channel, ServerRef, FullMessage),
     ok.
@@ -122,7 +128,11 @@ forward_message(Name, ServerRef, Message) ->
     forward_message(Name, ?DEFAULT_CHANNEL, ServerRef, Message).
 
 %% @doc Forward message to registered process on the remote side.
-forward_message(Name, _Channel, ServerRef, Message) ->
+forward_message(Name, Channel, ServerRef, Message) ->
+    forward_message(Name, Channel, ServerRef, Message, []).
+
+%% @doc Forward message to registered process on the remote side.
+forward_message(Name, _Channel, ServerRef, Message, _Options) ->
     gen_server:call(?MODULE, {forward_message, Name, ServerRef, Message}, infinity).
 
 %% @doc Receive message from a remote manager.
