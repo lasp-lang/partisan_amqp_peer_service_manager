@@ -197,34 +197,12 @@ init([]) ->
     %% Schedule periodic broadcast.
     schedule_broadcast(),
 
-    ConnectionRecord = case application:get_env(partisan, amqp_uri, false) of
-        false ->
-            #amqp_params_network{};
-        URI ->
-            {ok, ParsedURI} = amqp_uri:parse(URI),
-            ParsedURI
-    end,
-
-    case amqp_connection:start(ConnectionRecord) of
-        {ok, Connection} ->
-            case amqp_connection:open_channel(Connection) of
-                {ok, Channel} ->
-                    ok = gen_unicast_exchanges_channels_bindings(Myself, Channel),
-                    ok = gen_broadcast_exchanges_channels_bindings(Myself, Channel),
-
-                    ok = gen_unicast_subscription(Myself, Channel),
-                    ok = gen_broadcast_subscription(Myself, Channel),
-
-                    {ok, #state{myself=Myself,
-                                membership=Membership,
-                                channel=Channel, 
-                                connection=Connection}};
-                {error, Reason} ->
-                    lager:error("Failure trying to open channel: ~p", [Reason]),
-                    {stop, Reason}
-            end;
+    case connect() of
+        {ok, {Connection, Channel}} ->
+            {ok, #state{myself=Myself, membership=Membership,
+                        channel=Channel, connection=Connection}};
         {error, Reason} ->
-            lager:error("Failure trying to open connection to URI ~p: ~p", [ConnectionRecord, Reason]),
+            lager:error("Failure trying to open channel: ~p", [Reason]),
             {stop, Reason}
     end.
 
@@ -260,12 +238,12 @@ handle_call(get_local_state, _From, #state{membership=Membership}=State) ->
     {reply, {ok, Membership}, State};
 
 handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
+    lager:warning("Unhandled call messages: ~p", [Msg]),
     {reply, ok, State}.
 
 -spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
+    lager:warning("Unhandled cast messages: ~p", [Msg]),
     {noreply, State}.
 
 handle_info(broadcast, #state{channel=Channel, membership=Membership0}=State) ->
@@ -303,7 +281,7 @@ handle_info({#'basic.deliver'{delivery_tag = Tag}, #amqp_msg{payload=Payload}}, 
     {noreply, State};
 
 handle_info(Msg, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
+    lager:warning("Unhandled info messages: ~p", [Msg]),
     {noreply, State}.
 
 %% @private
@@ -336,7 +314,7 @@ do_send_message(Message, Channel) ->
     BroadcastName = ?BROADCAST,
     Payload = term_to_binary(Message),
     Publish = #'basic.publish'{exchange = BroadcastName},
-    amqp_channel:cast(Channel, Publish, #amqp_msg{payload = Payload}),
+    do_rabbit_send(Channel, Publish, Payload),
 
     ok.
 
@@ -345,7 +323,7 @@ do_send_message(Name, Message, Channel) ->
     UnicastName = gen_unicast_name(Name),
     Payload = term_to_binary(Message),
     Publish = #'basic.publish'{exchange = UnicastName, routing_key = UnicastName},
-    amqp_channel:cast(Channel, Publish, #amqp_msg{payload = Payload}),
+    do_rabbit_send(Channel, Publish, Payload),
 
     ok.
 
@@ -423,3 +401,41 @@ handle_message({forward_message, ServerRef, Message}, State) ->
 members(Membership) ->
     Members = ?SET:query(Membership),
     sets:to_list(Members).
+
+%% @private
+connect() ->
+    Myself = myself(),
+
+    ConnectionRecord = case application:get_env(partisan, amqp_uri, false) of
+        false ->
+            #amqp_params_network{};
+        URI ->
+            {ok, ParsedURI} = amqp_uri:parse(URI),
+            ParsedURI
+    end,
+
+    case amqp_connection:start(ConnectionRecord) of
+        {ok, Connection} ->
+            case amqp_connection:open_channel(Connection) of
+                {ok, Channel} ->
+                    ok = gen_unicast_exchanges_channels_bindings(Myself, Channel),
+                    ok = gen_broadcast_exchanges_channels_bindings(Myself, Channel),
+
+                    ok = gen_unicast_subscription(Myself, Channel),
+                    ok = gen_broadcast_subscription(Myself, Channel),
+
+                    {ok, {Connection, Channel}};
+                {error, Reason} ->
+                    lager:error("Failure trying to open channels: ~p", [Reason]),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            lager:error("Failure trying to open connection to URI ~p: ~p", 
+                        [ConnectionRecord, Reason]),
+            {error, Reason}
+    end.
+
+%% @private
+do_rabbit_send(Channel, Publish, Payload) ->
+    amqp_channel:call(Channel, Publish, #amqp_msg{payload = Payload}).
+            
