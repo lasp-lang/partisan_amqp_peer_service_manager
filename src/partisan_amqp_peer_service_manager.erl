@@ -216,15 +216,16 @@ handle_call({leave, _Node}, _From, State) ->
 handle_call({join, #{name := _Name}=_Node}, _From, State) ->
     {reply, ok, State};
 
-handle_call({send_message, Name, Message}, _From, #state{channel=Channel}=State) ->
-    Result = do_send_message(Name, Message, Channel),
-    {reply, Result, State};
+handle_call({send_message, Name, Message}, _From, #state{channel=Channel}=State0) ->
+    {ok, State} = do_send_message(State0, Name, Message, Channel),
+    {reply, ok, State};
 
-handle_call({forward_message, Name, ServerRef, Message}, _From, #state{channel=Channel}=State) ->
-    Result = do_send_message(Name,
-                             {forward_message, ServerRef, Message},
-                             Channel),
-    {reply, Result, State};
+handle_call({forward_message, Name, ServerRef, Message}, _From, #state{channel=Channel}=State0) ->
+    {ok, State} = do_send_message(State0, 
+                                  Name,
+                                  {forward_message, ServerRef, Message},
+                                  Channel),
+    {reply, ok, State};
 
 handle_call({receive_message, Message}, _From, State) ->
     handle_message(Message, State),
@@ -246,7 +247,7 @@ handle_cast(Msg, State) ->
     lager:warning("Unhandled cast messages: ~p", [Msg]),
     {noreply, State}.
 
-handle_info(broadcast, #state{channel=Channel, membership=Membership0}=State) ->
+handle_info(broadcast, #state{channel=Channel, membership=Membership0}=State0) ->
     Membership = ?SET:query(Membership0),
 
     %% Open direct exchanges and default channels.
@@ -255,7 +256,7 @@ handle_info(broadcast, #state{channel=Channel, membership=Membership0}=State) ->
     end, sets:to_list(Membership)),
 
     %% Broadcast membership.
-    do_send_message({membership, Membership0}, Channel),
+    {ok, State} = do_send_message(State0, {membership, Membership0}, Channel),
 
     schedule_broadcast(),
 
@@ -310,22 +311,18 @@ gen_unicast_name(#{name := Name}) ->
     list_to_binary(atom_to_list(Name)).
 
 %% @private
-do_send_message(Message, Channel) ->
+do_send_message(State, Message, Channel) ->
     BroadcastName = ?BROADCAST,
     Payload = term_to_binary(Message),
     Publish = #'basic.publish'{exchange = BroadcastName},
-    do_rabbit_send(Channel, Publish, Payload),
-
-    ok.
+    do_rabbit_send(State, Channel, Publish, Payload).
 
 %% @private
-do_send_message(Name, Message, Channel) ->
+do_send_message(State, Name, Message, Channel) ->
     UnicastName = gen_unicast_name(Name),
     Payload = term_to_binary(Message),
     Publish = #'basic.publish'{exchange = UnicastName, routing_key = UnicastName},
-    do_rabbit_send(Channel, Publish, Payload),
-
-    ok.
+    do_rabbit_send(State, Channel, Publish, Payload).
 
 %% @private
 gen_broadcast_exchanges_channels_bindings(Node, Channel) ->
@@ -436,6 +433,19 @@ connect() ->
     end.
 
 %% @private
-do_rabbit_send(Channel, Publish, Payload) ->
-    amqp_channel:call(Channel, Publish, #amqp_msg{payload = Payload}).
-            
+do_rabbit_send(State, Channel, Publish, Payload) ->
+    case amqp_channel:call(Channel, Publish, #amqp_msg{payload = Payload}) of
+        closing ->
+            case connect() of
+                {ok, {AMQPConnection, AMQPChannel}} ->
+                    {ok, State#state{connection=AMQPConnection, channel=AMQPChannel}};
+                {error, _Reason} ->
+                    %% Try connection again at the next connection interval.
+                    {ok, State}
+            end;
+        ok ->
+            ok;
+        Other ->
+            lager:info("AMQP reported ~p on send!", [Other]),
+            ok
+    end.
