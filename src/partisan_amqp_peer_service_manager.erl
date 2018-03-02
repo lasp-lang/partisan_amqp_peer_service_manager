@@ -446,8 +446,8 @@ do_rabbit_send(State, Channel, Publish, Payload) ->
                     {ok, State}
             end;
         ok ->
-            ok;
+            {ok, State};
         Other ->
             lager:info("AMQP reported ~p on send!", [Other]),
-            ok
+            {ok, State}
     end.
