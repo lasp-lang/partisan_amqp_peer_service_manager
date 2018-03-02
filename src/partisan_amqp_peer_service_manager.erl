@@ -436,6 +436,8 @@ connect() ->
 do_rabbit_send(State, Channel, Publish, Payload) ->
     case amqp_channel:call(Channel, Publish, #amqp_msg{payload = Payload}) of
         closing ->
+            lager:error("Connection was closing, attempting to reopen."),
+
             case connect() of
                 {ok, {AMQPConnection, AMQPChannel}} ->
                     {ok, State#state{connection=AMQPConnection, channel=AMQPChannel}};
