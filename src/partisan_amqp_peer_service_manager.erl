@@ -271,7 +271,7 @@ handle_info(#'basic.cancel_ok'{}, State) ->
 handle_info({#'basic.deliver'{delivery_tag = Tag}, #amqp_msg{payload=Payload}}, #state{channel=Channel}=State0) ->
     Decoded = binary_to_term(Payload),
 
-    lager:info("Received: ~p", [Decoded]),
+    %% lager:info("Received: ~p", [Decoded]),
 
     %% Process message.
     State = handle_message(Decoded, State0),
