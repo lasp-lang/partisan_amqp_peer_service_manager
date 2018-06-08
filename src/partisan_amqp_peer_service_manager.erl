@@ -269,7 +269,14 @@ handle_info(#'basic.cancel_ok'{}, State) ->
     {noreply, State};
 
 handle_info({#'basic.deliver'{delivery_tag = Tag}, #amqp_msg{payload=Payload}}, #state{channel=Channel}=State0) ->
-    Decoded = binary_to_term(Payload),
+    %% Get receive timestamp.
+    ReceiveTime = erlang:timestamp(),
+
+    %% Decode.
+    {Decoded, SendTime} = binary_to_term(Payload),
+
+    %% XXX: Gloally save, this is the hack of the century.
+    partisan_config:set(last_received_message, {SendTime, ReceiveTime}),
 
     %% lager:info("Received: ~p", [Decoded]),
 
@@ -313,14 +320,16 @@ gen_unicast_name(#{name := Name}) ->
 %% @private
 do_send_message(State, Message, Channel) ->
     BroadcastName = ?BROADCAST,
-    Payload = term_to_binary(Message),
+    SendTime = erlang:timestamp(),
+    Payload = term_to_binary({Message, SendTime}),
     Publish = #'basic.publish'{exchange = BroadcastName},
     do_rabbit_send(State, Channel, Publish, Payload).
 
 %% @private
 do_send_message(State, Name, Message, Channel) ->
     UnicastName = gen_unicast_name(Name),
-    Payload = term_to_binary(Message),
+    SendTime = erlang:timestamp(),
+    Payload = term_to_binary({Message, SendTime}),
     Publish = #'basic.publish'{exchange = UnicastName, routing_key = UnicastName},
     do_rabbit_send(State, Channel, Publish, Payload).
 
