@@ -276,7 +276,7 @@ handle_info({#'basic.deliver'{delivery_tag = Tag}, #amqp_msg{payload=Payload}}, 
     {Decoded, SendTime} = binary_to_term(Payload),
 
     %% XXX: Gloally save, this is the hack of the century.
-    partisan_config:set(last_received_message, {SendTime, ReceiveTime}),
+    partisan_config:set(last_received_message, {SendTime, ReceiveTime, size(Payload)}),
 
     %% lager:info("Received: ~p", [Decoded]),
 
